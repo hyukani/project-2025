@@ -1,0 +1,294 @@
+---
+title: "Segmentasi Pasien Berdasarkan Profil Medis: Perbandingan DBSCAN dengan dan tanpa PCA"
+author: |
+  Kelompok 09 Analisis Multivariat 2023E  
+  -----------------------  
+  1. Al Zahra Mayluna  
+  2. Ayu Ghaniyatur Rohmah  
+  3. Maysahayu Artika Maharani
+  
+  Dosen Pengampu: Ike Fitriyaningsih, M.Si
+date: "2025-06-07"
+output:
+  html_document:
+    theme: cerulean
+    highlight: tango
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    number_sections: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,           
+  message = FALSE,       
+  warning = FALSE,       
+  fig.align = "center",  
+  fig.width = 7,
+  fig.height = 5)
+library(tidyverse)
+library(caret)
+library(cluster)
+library(factoextra)
+library(e1071)
+library(fpc)
+library(clusterSim)
+library(ppclust)
+library(dbscan)
+library(dplyr)
+library(VIM)
+```
+
+# Load Dataset
+```{r}
+data <- read.csv("data/patient_dataset.csv")
+head(data, n = 10)
+```
+
+# Preprocessing
+## Cek Missing Value dan Nilai Kosong
+```{r}
+data %>%
+  summarise(across(everything(), ~sum(is.na(.)))) %>%
+  pivot_longer(everything(), names_to = "Kolom", values_to = "Jumlah_NA") %>%
+  mutate(Persen_NA = round((Jumlah_NA / nrow(data)) * 100, 2))
+
+# Cek nilai kosong " " atau spasi pada kolom karakter
+sapply(data, function(x) {
+  if (is.character(x) || is.factor(x)) sum(trimws(x) == "") else 0
+})
+```
+Dari hasil cek nilai kosong pada setiap kolom dataset, ditemukan kolom gender, plasma_glucose, skin_thickness, dan insulin memiliki nilai kosong (NA). Selain itu, terdapat 455 baris nilai dengan kolom kosong ("  ") pada kolom residence_type, yang berarti baris-baris tersebut tidak memiliki informasi tentang jenis tempat tinggal pasien. 
+
+## Imputasi Data Menggunakan KNN
+```{r}
+list_impute <- c("plasma_glucose", "skin_thickness", "insulin")
+data[list_impute] <- kNN(data[list_impute], k = 5)[, list_impute]
+```
+
+## Ubah Kolom Kategorikal ke Numerik
+```{r}
+ohe_encode <- function(df, column) {
+  dummies <- dummyVars(as.formula(paste("~", column)), data = df)
+  ohe <- predict(dummies, newdata = df)
+  colnames(ohe) <- gsub("\\.", "_", colnames(ohe))
+  ohe_df <- as.data.frame(ohe)
+  df <- cbind(df, ohe_df)
+  df <- df[, !(names(df) %in% column)]
+  return(df)
+}
+
+data <- ohe_encode(data, "residence_type")
+data <- ohe_encode(data, "gender")
+data <- ohe_encode(data, "smoking_status")
+```
+
+## Cek Ulang Missing Value
+```{r}
+data %>%
+  summarise(across(everything(), ~sum(is.na(.)))) %>%
+  pivot_longer(everything(), names_to = "Kolom", values_to = "Jumlah_NA") %>%
+  mutate(Persen_NA = round((Jumlah_NA / nrow(data)) * 100, 2))
+```
+
+## Scaling 
+```{r}
+scaler <- preProcess(data, method = c("center", "scale"))
+data_scaled <- predict(scaler, data)
+```
+
+
+# DBSCAN tanpa PCA
+## Grafik kNN Distance Plot
+```{r}
+set.seed(123)
+kNNdistplot(data_scaled, k = 4)
+abline(h = 3, col = "red", lty = 2)
+```
+Dari grafik kNN distance plot (dengan k = 4, artinya minPts = 4), kita bisa menentukan parameter eps dan minPts berdasarkan titik "elbow" atau perubahan kemiringan yang signifikan. Terlihat bahwa titik siku mulai naik tajam sekitar jarak 3.0, sehingga dapat disimpulkan bahwa titik ini adalah estimasi eps yang baik. Namun, jika terlalu banyak noise, coba naikkan eps sedikit, sedangkan jika terlalu sedikit cluster yang terbentuk, atau semua titik masuk 1 cluster, coba kurangi eps.
+
+## DBSCAN 
+```{r}
+db_result <- dbscan(data_scaled, eps = 3.6, minPts = 4)
+fviz_cluster(list(data = data_scaled, cluster = db_result$cluster),
+             main = "DBSCAN Clustering")
+```
+Parameter ε (epsilon) pada DBSCAN ditentukan menggunakan kNN distance plot dengan k = 4 sehingga minPts = 4. Untuk grafiknya menunjukkan elbow atau tekukan di nilai 3 dan garis merah putus-putus pada grafik menandai ambang epsilon yang digunakan dalam algoritma, sehingga ditetapkan eps = 3.6 untuk meminimalisir noise. 
+
+Setelah parameter ditentukan, dilanjutkan klasterisasi menggunakan DBSCAN. Hasil visualisasi menunjukkan bahwa algoritma berhasil mengidentifikasi beberapa klaster yang terpisah, namun masih cukup banyak data yang diklasifikasikan sebagai noise yang ditandai dengan label 0 dan simbol merah. Hal ini mengindikasikan bahwa data asli masih cukup kompleks dan tumpang tindih antar grup pasien.
+
+## Evaluasi DBSCAN
+```{r}
+silhouette_dbscan <- silhouette(db_result$cluster, dist(data_scaled))
+silhouette_score_dbscan <- mean(silhouette_dbscan[, 3])  # Nilai rata-rata Silhouette
+
+# Hitung jumlah noise points dengan label 0
+noise_points_dbscan <- sum(db_result$cluster == 0)
+
+cat("Silhouette Score DBSCAN tanpa PCA:", silhouette_score_dbscan, "\n")
+cat("Number of Noise Points DBSCAN tanpa PCA:", noise_points_dbscan, "\n")
+```
+Pada bagian ini, algoritma DBSCAN tanpa reduksi dimensi PCA menghasilkan Silhouette Score sebesar 0.159, yang menandakan bahwa kualitas klaster masih tergolong rendah. Nilai ini menunjukkan bahwa pemisahan antar klaster belum optimal dan terjadi tumpang tindih (overlap) antar kelompok data, yang mengakibatkan jarak antar titik menjadi kurang representatif dan menghambat pembentukan klaster yang jelas oleh DBSCAN.
+
+Sebanyak 10 data atau sekitar 0.17% dari total 6000 observasi diklasifikasikan sebagai noise karena tidak masuk ke dalam klaster manapun.
+
+
+# DBSCAN dengan PCA
+## PCA
+```{r}
+pca_res <- prcomp(data_scaled, center = TRUE, scale. = TRUE)
+fviz_eig(pca_res)
+summary(pca_res)$importance[3, ]  # variansi kumulatif
+
+# Ambil variansi kumulatif
+cum_var <- summary(pca_res)$importance[3, ]
+n_components_80 <- which(cum_var >= 0.8)[1]  # Komponen pertama yang mencapai ≥80%
+
+cat("Jumlah komponen untuk ≥80% variansi:", n_components_80, "\n")
+
+# Opsi 1: PCA dengan variansi kumulatif ≥80%
+pca_data_80 <- as.data.frame(pca_res$x[, 1:n_components_80])
+
+# Opsi 2: PCA dengan 10 komponen 
+pca_data_10 <- as.data.frame(pca_res$x[, 1:10])
+
+# Opsi 3 : PCA dengan 5 komponen
+pca_data_5 <- as.data.frame(pca_res$x[, 1:5])
+
+# Opsi 4 : PCA dengan 3 komponen
+pca_data_3 <- as.data.frame(pca_res$x[, 1:3])
+
+```
+Hasil visualisasi scree plot menunjukkan bahwa komponen utama pertama (PC1) hingga PC2 menyumbang variasi yang cukup besar dibandingkan komponen lainnya. Grafik menunjukkan pola “elbow” yang menandakan penurunan kontribusi variansi mulai terjadi setelah beberapa komponen pertama.
+
+Namun, perlu ditekankan bahwa dalam konteks klasterisasi, tujuan utama bukan sekadar mempertahankan variansi data sebanyak mungkin, melainkan mewakili struktur spasial yang optimal agar kelompok lebih kompak dan terpisah jelas.
+
+Karena itu, digunakan empat opsi jumlah komponen utama:
+
+Opsi 1: 13 komponen utama (pca_data_80) untuk mempertahankan ≥80% variansi total. Cocok jika ingin menjaga informasi sebanyak mungkin.
+
+Opsi 2: 10 komponen utama (pca_data_10) yang menjelaskan ~67.25% variansi. Digunakan jika hasil klaster cukup baik dan komputasi lebih ringan.
+
+Opsi 3: 5 komponen utama (pca_data_5), hanya mencakup ~38.99% variansi, namun bisa memberikan representasi struktur spasial yang lebih jelas untuk clustering.
+
+Opsi 4: 3 komponen utama (pca_data_3), hanya ~27.09% variansi, tetapi sering kali cukup untuk menghasilkan separasi kelompok yang lebih optimal.
+
+Perlu diingat, variansi tinggi belum tentu berguna dalam clustering jika informasi tersebut tidak berkaitan dengan jarak antar titik. Oleh karena itu, jumlah komponen dipilih berdasarkan kualitas hasil clustering (misalnya dari Silhouette Score), bukan semata-mata dari nilai variansi kumulatif.
+
+## DBSCAN
+### Penentuan Komponen PCA
+```{r}
+# Hasil tuning terbaik
+best_eps <- 2
+best_minPts <- 4   
+
+# DBSCAN pada data PCA dengan ≥80% variansi (13 PC)
+db_80 <- dbscan(pca_data_80, eps = best_eps, minPts = best_minPts)
+
+# DBSCAN pada data PCA dengan 10 komponen utama
+db_10 <- dbscan(pca_data_10, eps = best_eps, minPts = best_minPts)
+
+# DBSCAN pada data PCA dengan 5 komponen utama
+db_5 <- dbscan(pca_data_5, eps = best_eps, minPts = best_minPts)
+
+# DBSCAN pada data PCA dengan 3 komponen utama
+db_3 <- dbscan(pca_data_3, eps = best_eps, minPts = best_minPts)
+
+# Evaluasi menggunakan Silhouette Score
+sil_80 <- silhouette(db_80$cluster, dist(pca_data_80))
+sil_10 <- silhouette(db_10$cluster, dist(pca_data_10))
+sil_5 <- silhouette(db_5$cluster, dist(pca_data_5))
+sil_3 <- silhouette(db_3$cluster, dist(pca_data_3))
+
+# Tampilkan hasil evaluasi
+cat("Silhouette Score (80% var):", mean(sil_80[, 3]), "\n")
+cat("Silhouette Score (10 PC):", mean(sil_10[, 3]), "\n")
+cat("Silhouette Score (5 PC):", mean(sil_5[, 3]), "\n")
+cat("Silhouette Score (3 PC):", mean(sil_3[, 3]), "\n")
+
+```
+Dikarenakan hasil scree plot menunjukkan bahwa dua komponen utama pertama (PC1 dan PC2) menyumbang proporsi variansi terbesar dibandingkan komponen lainnya, maka digunakanlah parameter eps = 2 dan minPts = 4 yang telah ditentukan melalui analisis kNN distance plot. Tujuannya adalah untuk mengevaluasi performa DBSCAN terhadap data hasil reduksi PCA dengan empat opsi berbeda. 
+
+Dari hasil yang ada, terlihat bahwa nilai Silhouette Score tertinggi diperoleh pada konfigurasi PCA dengan 3 komponen utama, yaitu sebesar 0.548. Hal ini menunjukkan bahwa struktur klaster paling kompak dan terpisah dengan baik justru terbentuk saat hanya menggunakan sebagian kecil komponen, bukan saat mempertahankan variansi maksimal.
+
+## Hasil Clustering
+```{r}
+db_result <- dbscan(pca_data_3, eps = 2, minPts = 4)
+fviz_cluster(list(data = pca_data_3, cluster = db_result$cluster),
+             main = "DBSCAN Clustering")
+```
+Setelah data direduksi dimensinya menggunakan PCA menjadi 3 komponen utama, selanjutnya dilakukan klasterisasi menggunakan DBSCAN. 
+
+Hasil visualisasi klaster menunjukkan adanya 3 klaster utama yang terbentuk dengan jelas, yaitu:
+
+- Cluster 1 warna merah
+
+- Cluster 2 warna hijau
+
+- Cluster 3 warna biru
+
+## Evaluasi DBSCAN dengan PCA
+```{r}
+silhouette_dbscan_pca <- silhouette(db_result$cluster, dist(pca_data_3))
+silhouette_score_dbscan_pca <- mean(silhouette_dbscan_pca[, 3])
+noise_points_dbscan <- sum(db_result$cluster == 0)
+
+cat("Silhouette Score DBSCAN dengan PCA:", silhouette_score_dbscan_pca, "\n")
+cat("Number of Noise Points DBSCAN dengan PCA:", noise_points_dbscan, "\n")
+```
+Hasil klasterisasi menunjukkan adanya peningkatan yang signifikan dibandingkan hasil klaster tanpa PCA. Tidak ada data yang dikategorikan sebagai noise, jauh lebih sempurna klasterisasinya dibandingkan dengan hasil tanpa PCA.
+
+Selain itu, nilai Silhouette Score meningkat menjadi 0,548, yang menunjukkan bahwa pembentukan klaster menjadi lebih baik, dengan pemisahan antar klaster yang lebih jelas serta kohesi yang lebih kuat di dalam klaster
+
+# Visualisasi Pebandingan
+## Barplot Silhoutte Score
+```{r}
+silhouette_df <- data.frame(
+  Metode = c("Tanpa PCA", "Dengan PCA"),
+  Silhouette = c(silhouette_score_dbscan, silhouette_score_dbscan_pca)
+)
+
+ggplot(silhouette_df, aes(x = Metode, y = Silhouette, fill = Metode)) +
+  geom_bar(stat = "identity", width = 0.4) +
+  ggtitle("Perbandingan Silhouette Score") +
+  theme_minimal()
+
+```
+
+## Silhouette Plot – DBSCAN tanpa PCA
+```{r}
+fviz_silhouette(silhouette_dbscan) +
+  ggtitle("Silhouette Plot - DBSCAN (Tanpa PCA)")
+
+```
+Secara keseluruhan, average silhouette score yang rendah dan bahkan negatif pada klaster 0 mengindikasikan bahwa pemisahan antar klaster masih belum optimal. Hal ini disebabkan oleh dimensi data yang tinggi dan overlap antar fitur, yang menyebabkan DBSCAN kesulitan menemukan struktur klaster yang jelas. Maka, diperlukan reduksi dimensi seperti PCA untuk meningkatkan performa klasterisasi.
+
+## Silhouette Plot – DBSCAN dengan PCA
+```{r}
+fviz_silhouette(silhouette_dbscan_pca) +
+  ggtitle("Silhouette Plot - DBSCAN (Dengan PCA)")
+
+```
+Setelah reduksi dimensi dengan PCA, terutama dengan hanya menggunakan 3 komponen utama, struktur spasial antar data menjadi lebih terdefinisi. Nilai average silhouette width pada seluruh klaster meningkat secara drastis dibandingkan kondisi tanpa PCA. Ini membuktikan bahwa reduksi dimensi tidak hanya menyederhanakan data, tetapi juga membantu algoritma DBSCAN dalam mengidentifikasi klaster yang lebih jelas dan kohesif, tanpa perlu mempertahankan seluruh variansi awal. Selain itu, tidak ditemukan noise atau misclustered point secara eksplisit dari output ini, yang menandakan bahwa semua data berhasil dikelompokkan dengan baik.
+
+
+```{r}
+
+data$Cluster <- db_result$cluster
+
+# statistik deskriptif
+cluster_summary <- data %>%
+  group_by(Cluster) %>%
+  summarise(across(everything(), list(mean = ~mean(. , na.rm = TRUE), sd = ~sd(. , na.rm = TRUE)), .names = "{col}_{fn}"))
+cluster_summary
+
+write.csv(cluster_summary, "cluster_summary.csv", row.names = FALSE)
+```
+
+
+# Referensi
+
+1. RDocumentation. (2019). *dbscan function - RDocumentation*. Retrieved from https://www.rdocumentation.org/packages/dbscan/versions/1.2.2/topics/dbscan  
+2. Parhusip, H. A., Trihandaru, S., Susanto, B., Heriadi, A. H., Santosa, P. P., Sardjono, Y., & Kurniawan, J. D. (2024). *Density-Based Spatial Clustering of Applications with Noise (DBSCAN) and Principal Component Analysis (PCA) for Anomaly Detection*. *Lontar Komputer: Jurnal Ilmiah Teknologi Informasi*, 15(02), 75. https://doi.org/10.24843/lkjiti.2024.v15.i02.p01  
+3. RPubs. (2024, October 24). *Clustering Analysis using k-means, DBSCAN, and Evaluation Metrics in R*. Retrieved from https://rpubs.com/madhu_mardoor/1236382

@@ -1,0 +1,202 @@
+---
+title: "Segmentasi Pasien Berdasarkan Profil Medis: Perbandingan Fuzzy C-Means dengan dan tanpa PCA"
+author: |
+  Kelompok 09 Anmul 2023E  
+  -----------------------  
+  1. Al Zahra Mayluna (075)
+  2. Ayu Ghaniyatur Rohmah (178)  
+  3. Maysahayu Artika Maharani (214)
+    
+  Dosen Pengampu: Ike Fitriyaningsih, M.Si
+date: "2025-06-07"
+output:
+  html_document:
+    theme: cerulean
+    highlight: tango
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    number_sections: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,           
+  message = FALSE,       
+  warning = FALSE,       
+  fig.align = "center",  
+  fig.width = 7,
+  fig.height = 5)
+library(tidyverse)
+library(caret)
+library(cluster)
+library(factoextra)
+library(e1071)
+library(fpc)
+library(clusterSim)
+library(ppclust)
+library(dbscan)
+library(dplyr)
+library(VIM)
+```
+
+# Load Dataset
+```{r}
+data <- read.csv("data/patient_dataset.csv")
+head(data, n = 10)
+```
+
+# Preprocessing
+## Cek Missing Value dan Nilai Kososng
+```{r}
+data %>%
+  summarise(across(everything(), ~sum(is.na(.)))) %>%
+  pivot_longer(everything(), names_to = "Kolom", values_to = "Jumlah_NA") %>%
+  mutate(Persen_NA = round((Jumlah_NA / nrow(data)) * 100, 2))
+
+# Cek nilai kosong " " atau spasi pada kolom karakter
+sapply(data, function(x) {
+  if (is.character(x) || is.factor(x)) sum(trimws(x) == "") else 0
+})
+```
+Dari hasil cek nilai kosong pada setiap kolom dataset, ditemukan kolom gender, plasma_glucose, skin_thickness, dan insulin memiliki nilai kosong (NA). Selain itu, terdapat 455 baris nilai dengan kolom kosong ("  ") pada kolom residence_type, yang berarti baris-baris tersebut tidak memiliki informasi tentang jenis tempat tinggal pasien. 
+
+## Imputasi Data Menggunakan KNN
+```{r}
+list_impute <- c("plasma_glucose", "skin_thickness", "insulin")
+data[list_impute] <- kNN(data[list_impute], k = 5)[, list_impute]
+```
+
+## Ubah Kolom Kategorikal ke Numerik
+```{r}
+ohe_encode <- function(df, column) {
+  dummies <- dummyVars(as.formula(paste("~", column)), data = df)
+  ohe <- predict(dummies, newdata = df)
+  colnames(ohe) <- gsub("\\.", "_", colnames(ohe))
+  ohe_df <- as.data.frame(ohe)
+  df <- cbind(df, ohe_df)
+  df <- df[, !(names(df) %in% column)]
+  return(df)
+}
+
+data <- ohe_encode(data, "residence_type")
+data <- ohe_encode(data, "gender")
+data <- ohe_encode(data, "smoking_status")
+```
+
+## Cek Ulang Missing Value
+```{r}
+data %>%
+  summarise(across(everything(), ~sum(is.na(.)))) %>%
+  pivot_longer(everything(), names_to = "Kolom", values_to = "Jumlah_NA") %>%
+  mutate(Persen_NA = round((Jumlah_NA / nrow(data)) * 100, 2))
+```
+
+## Scaling 
+```{r}
+scaler <- preProcess(data, method = c("center", "scale"))
+data_scaled <- predict(scaler, data)
+```
+
+# Fuzzy C-Means tanpa PCA
+## Fuzzy C-Means
+```{r}
+fcm_result <- cmeans(data_scaled, centers = 3, m = 2)
+fviz_cluster(list(data = data_scaled, cluster = fcm_result$cluster),
+             main = "Fuzzy C-Means Clustering tanpa PCA)")
+```
+Proses lanjutan dari preprocessing adalah analisis menggunakan algoritma Fuzzy C-Means (FCM) tanpa PCA. Parameter jumlah klaster ditentukan 3 cluster sesuai asumsi awal segmentasi yang diinginkan. Selain itu digunakan parameter fuzziness m = 2, yang merupakan nilai default umum untuk mengatur derajat keanggotaan ganda dimana semakin besar m, semakin kabur batas klasternya.
+
+Visualisasi Fuzzy C-Means tanpa PCA menunjukkan tiga klaster yang terpisah dengan jelas, masing-masing ditandai oleh warna merah, hijau, dan biru. Metode Fuzzy C-Means membolehkan setiap data memiliki keanggotaan pada lebih dari satu klaster, sehingga area antar klaster saling tumpang tindih dan batas klaster kurang tegas.
+
+## Evaluasi Fuzzy C-Means
+```{r}
+silhouette_fcm <- silhouette(fcm_result$cluster, dist(data_scaled))
+silhouette_score_fcm <- mean(silhouette_fcm[, 3])
+
+cat("Silhouette Score Fuzzy C-Means tanpa PCA:", silhouette_score_fcm)
+```
+Pada bagian ini didapatkan Silhouette Score Fuzzy C-Means sebesar 0.098, yang menandakan kualitas klaster masih tergolong rendah. Hal ini terjadi karena dimensi data yang tinggi, serta tumpang tindih antar klaster.
+
+
+# Fuzzy C-Means dengan PCA
+## PCA
+```{r}
+pca_res <- prcomp(data_scaled, center = TRUE, scale. = TRUE)
+fviz_eig(pca_res)
+summary(pca_res)$importance[3, ]  # variansi kumulatif
+
+# Hitung variansi kumulatif
+cum_var <- summary(pca_res)$importance[3, ]
+n_components <- which(cum_var >= 0.8)[1]
+pca_data <- as.data.frame(pca_res$x[, 1:3])
+```
+Hasil visualisasi scree plot menunjukkan bahwa komponen utama pertama (PC1) hingga komponen kedua (PC2) menyumbang proporsi variansi yang cukup besar dibandingkan komponen-komponen berikutnya. Grafik memperlihatkan pola “elbow” yang menandakan penurunan signifikan dalam kontribusi variansi setelah beberapa komponen awal.
+
+Namun demikian, dalam konteks klasterisasi, tujuan utama bukan hanya mempertahankan sebanyak mungkin variansi data, melainkan merepresentasikan struktur spasial data secara optimal agar klaster yang terbentuk lebih kompak dan terpisah dengan jelas. Perlu dipahami bahwa variansi yang tinggi belum tentu relevan dalam proses klasterisasi apabila informasi yang dikandung tidak berkontribusi terhadap pemisahan jarak antar titik data.
+
+Oleh karena itu, pemilihan jumlah komponen utama tidak semata-mata didasarkan pada nilai variansi kumulatif, melainkan juga mempertimbangkan kualitas hasil klasterisasi misalnya melalui nilai Silhouette Score. Berdasarkan pertimbangan tersebut, tiga komponen utama pertama dipilih untuk digunakan dalam proses klasterisasi.
+
+## Fuzzy C-Means
+```{r}
+fcm_pca <- cmeans(pca_data, centers = 3, m = 2)
+fviz_cluster(list(data = pca_data, cluster = fcm_pca$cluster),
+             main = "Fuzzy C-Means Clustering dengan PCA")
+```
+
+## Evaluasi Fuzzy C-Means
+```{r}
+silhouette_fcm_pca <- silhouette(fcm_pca$cluster, dist(pca_data))
+silhouette_score_fcm_pca <- mean(silhouette_fcm_pca[, 3])
+
+cat("Silhouette Score Fuzzy C-Means dengan PCA:", silhouette_score_fcm_pca)
+```
+Setelah data direduksi dimensinya menggunakan PCA menjadi 3 komponen utama, selanjutnya dilakukan klasterisasi menggunakan Fuzzy C-Means.
+
+Hasil visualisasi klaster menunjukkan adanya tiga klaster utama yang terbentuk, yaitu:
+
+- Cluster 1 warna merah
+
+- Cluster 2 warna hijau
+
+- Cluster 3 warna biru
+
+Dengan silhouette score 0.534, pengelompokan klaster lebih terlihat terpisah meski antar klaster masih nampak tumpang tindih
+
+
+# Visualisasi Perbandingan
+## Barplot Silhoutte Score
+```{r}
+silhouette_df <- data.frame(
+  Metode = c("Tanpa PCA", "Dengan PCA"),
+  Silhouette = c(silhouette_score_fcm, silhouette_score_fcm_pca)
+)
+
+ggplot(silhouette_df, aes(x = Metode, y = Silhouette, fill = Metode)) +
+  geom_bar(stat = "identity", width = 0.4) +
+  ggtitle("Perbandingan Silhouette Score Fuzzy C-Means") +
+  theme_minimal()
+```
+
+## Silhouette Plot – Fuzzy C-Means tanpa PCA
+```{r}
+fviz_silhouette(silhouette_fcm) +
+  ggtitle("Silhouette Plot - Fuzzy C-Means (Tanpa PCA)")
+```
+Hasil silhouette plot tanpa PCA menunjukkan tiga klaster dengan ukuran yang tidak seimbang, dimana klaster 1 dan klaster 2 mendominasi dengan 2825 data dan 2951 data. Sedangkan klaster 3 terendah berisi 224 data. Rata-rata nilai silhouette pada ketiga klaster relatif rendah, yaitu hanya 0.12 unruk klaster 1, 0.08 unruk klaster 2, dan 0.26 untuk klaster 3, yang mengindikasikan bahwa pemisahan antar klaster kurang optimal dan terdapat tumpang tindih yang cukup besar antar anggota klaster. Nilai-nilai ini mencerminkan bahwa struktur klaster yang terbentuk belum cukup baik dalam memisahkan kelompok data secara jelas.
+
+## Silhouette Plot – Fuzzy C-Means dengan PCA
+```{r}
+fviz_silhouette(silhouette_fcm_pca) +
+  ggtitle("Silhouette Plot - Fuzzy C-Means (Dengan PCA)")
+```
+Hasil silhouette plot menunjukkan pembentukan tiga klaster dengan ukuran yang cukup seimbang, yakni klaster 1 sebanyak 1547 data, klaster 2 sebanyak 1683 data, dan klaster 3 sebanyak 2770 data. Rata-rata nilai silhouette untuk masing-masing klaster adalah 0,61 untuk klaster 1, 0,57 untuk klaster 2, dan 0,47 untuk klaster 3, yang mencerminkan kualitas pemisahan klaster yang cukup baik. Nilai silhouette tertinggi terdapat pada klaster 1, menunjukkan pemisahan yang jelas dari klaster lain, diikuti oleh klaster 2 dan klaster 3.
+
+Hal ini mengindikasikan bahwa penggunaan PCA berkontribusi positif dalam membentuk struktur klaster yang lebih jelas dan proporsional, dibandingkan clustering tanpa PCA.
+
+
+# Referensi
+
+1. RPubs. (2023, January 21). *Algoritma Fuzzy C-Means dengan R*. Retrieved from https://rpubs.com/annisashrmn22/993952  
+2. RPubs. (2021, June 26). *Fuzzy C-Means Clustering*. Retrieved from https://rpubs.com/writetosamadalvi/Fuzzy  
+3. Widianti, R., Surono, S., & Ibraheem, K. I. (2004, November 2). *Handling Noise Data with PCA Method and Optimization Using Hybrid Fuzzy C-Means and Genetic Algorithm*. *JUITA: Jurnal Informatika*. Retrieved from https://jurnalnasional.ump.ac.id/index.php/JUITA/article/view/21765

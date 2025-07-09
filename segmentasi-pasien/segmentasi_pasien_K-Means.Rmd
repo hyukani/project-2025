@@ -1,0 +1,241 @@
+---
+title: "Segmentasi Pasien Berdasarkan Profil Medis: Perbandingan K-Means dengan dan tanpa PCA"
+author: |
+  Kelompok 09 Anmul 2023E  
+  -----------------------  
+  1. Al Zahra Mayluna  
+  2. Ayu Ghaniyatur Rohmah  
+  3. Maysahayu Artika Maharani
+    
+  Dosen Pengampu: Ike Fitriyaningsih, M.Si
+date: "2025-06-07"
+output:
+  html_document:
+    theme: cerulean
+    highlight: tango
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    number_sections: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,           
+  message = FALSE,       
+  warning = FALSE,       
+  fig.align = "center",  
+  fig.width = 7,
+  fig.height = 5)
+library(tidyverse)
+library(caret)
+library(cluster)
+library(factoextra)
+library(e1071)
+library(fpc)
+library(clusterSim)
+library(ppclust)
+library(dbscan)
+library(dplyr)
+library(VIM)
+```
+
+# Load Dataset
+```{r}
+data <- read.csv("data/patient_dataset.csv")
+head(data, n = 10)
+```
+
+# Preprocessing
+## Cek Missing Value dan Nilai Kosong
+```{r}
+data %>%
+  summarise(across(everything(), ~sum(is.na(.)))) %>%
+  pivot_longer(everything(), names_to = "Kolom", values_to = "Jumlah_NA") %>%
+  mutate(Persen_NA = round((Jumlah_NA / nrow(data)) * 100, 2))
+
+# Cek nilai kosong " " atau spasi pada kolom karakter
+sapply(data, function(x) {
+  if (is.character(x) || is.factor(x)) sum(trimws(x) == "") else 0
+})
+```
+Dari hasil cek nilai kosong pada setiap kolom dataset, ditemukan kolom gender, plasma_glucose, skin_thickness, dan insulin memiliki nilai kosong (NA). Selain itu, terdapat 455 baris nilai dengan kolom kosong ("  ") pada kolom residence_type, yang berarti baris-baris tersebut tidak memiliki informasi tentang jenis tempat tinggal pasien. 
+
+## Imputasi Data Menggunakan KNN
+```{r}
+list_impute <- c("plasma_glucose", "skin_thickness", "insulin")
+data[list_impute] <- kNN(data[list_impute], k = 5)[, list_impute]
+```
+
+## Ubah Kolom Kategorikal ke Numerik
+```{r}
+ohe_encode <- function(df, column) {
+  dummies <- dummyVars(as.formula(paste("~", column)), data = df)
+  ohe <- predict(dummies, newdata = df)
+  colnames(ohe) <- gsub("\\.", "_", colnames(ohe))
+  ohe_df <- as.data.frame(ohe)
+  df <- cbind(df, ohe_df)
+  df <- df[, !(names(df) %in% column)]
+  return(df)
+}
+
+data <- ohe_encode(data, "residence_type")
+data <- ohe_encode(data, "gender")
+data <- ohe_encode(data, "smoking_status")
+```
+
+## Cek Ulang Missing Value
+```{r}
+data %>%
+  summarise(across(everything(), ~sum(is.na(.)))) %>%
+  pivot_longer(everything(), names_to = "Kolom", values_to = "Jumlah_NA") %>%
+  mutate(Persen_NA = round((Jumlah_NA / nrow(data)) * 100, 2))
+```
+
+## Scaling 
+```{r}
+scaler <- preProcess(data, method = c("center", "scale"))
+data_scaled <- predict(scaler, data)
+```
+
+
+# K-Means tanpa PCA
+## Menentukan Jumlah Cluster
+```{r}
+# Elbow Method
+fviz_nbclust(data_scaled, kmeans, method = "wss") +
+  labs(title = "Elbow Method", x = "Jumlah Cluster", y = "WSS")
+
+# Silhouette Method
+fviz_nbclust(data_scaled, kmeans, method = "silhouette") +
+  labs(title = "Silhouette Method")
+```
+
+## K-Means
+```{r}
+set.seed(123)
+kmeans_result <- kmeans(data_scaled, centers = 3, nstart = 25)
+fviz_cluster(list(data = data_scaled, cluster = kmeans_result$cluster),
+             main = "K-Means Clustering")
+```
+Hasil clustering K-Means tanpa PCA menunjukkan bahwa pemilihan tiga klaster didukung oleh metode Silhouette dan Elbow yang konsisten, dengan nilai silhouette tertinggi sekitar 0,12. Visualisasi scatter plot memperlihatkan ketiga klaster terpisah dengan jelas.
+
+## Evaluasi K-Means
+```{r}
+silhouette_kmeans <- silhouette(kmeans_result$cluster, dist(data_scaled))
+silhouette_score_kmeans <- mean(silhouette_kmeans[, 3])  # Nilai rata-rata Silhouette
+
+wss_kmeans <- kmeans_result$tot.withinss  # WSS (Within-Cluster Sum of Squares)
+
+cat("Silhouette Score K-Meanstanpa PCA:", silhouette_score_kmeans, "\n")
+cat("WSS (Within-Cluster Sum of Squares) K-Means tanpa PCA:", wss_kmeans, "\n")
+```
+Nilai Silhouette Score K-Means sebesar 0,12 menunjukkan bahwa pemisahan klaster pada dataset ini masih tergolong rendah hingga sedang. Namun, skor ini masih cukup untuk menunjukkan adanya pola pengelompokan. Nilai WSS sebesar 89.968,95 mengindikasikan tingkat kepadatan klaster, di mana semakin kecil nilai WSS semakin rapat data dalam klaster terhadap centroidnya.
+
+
+# K-Means dengan PCA
+## PCA
+```{r}
+pca_res <- prcomp(data_scaled, center = TRUE, scale. = TRUE)
+fviz_eig(pca_res)
+summary(pca_res)$importance[3, ]  # variansi kumulatif
+
+# Hitung variansi kumulatif
+cum_var <- summary(pca_res)$importance[3, ]
+n_components <- which(cum_var >= 0.8)[1]
+pca_data <- as.data.frame(pca_res$x[, 1:3])
+```
+Hasil visualisasi scree plot menunjukkan bahwa komponen utama pertama (PC1) hingga komponen kedua (PC2) menyumbang proporsi variansi yang cukup besar dibandingkan komponen-komponen berikutnya. Grafik memperlihatkan pola “elbow” yang menandakan penurunan signifikan dalam kontribusi variansi setelah beberapa komponen awal.
+
+Namun demikian, dalam konteks klasterisasi, tujuan utama bukan hanya mempertahankan sebanyak mungkin variansi data, melainkan merepresentasikan struktur spasial data secara optimal agar klaster yang terbentuk lebih kompak dan terpisah dengan jelas. Perlu dipahami bahwa variansi yang tinggi belum tentu relevan dalam proses klasterisasi apabila informasi yang dikandung tidak berkontribusi terhadap pemisahan jarak antar titik data.
+
+Oleh karena itu, pemilihan jumlah komponen utama tidak semata-mata didasarkan pada nilai variansi kumulatif, melainkan juga mempertimbangkan kualitas hasil klasterisasi—misalnya melalui nilai Silhouette Score. Berdasarkan pertimbangan tersebut, tiga komponen utama pertama dipilih untuk digunakan dalam proses klasterisasi.
+
+## K-Means
+```{r}
+set.seed(123)
+kmeans_pca <- kmeans(pca_data, centers = 3, nstart = 25)
+
+fviz_cluster(list(data = pca_data, cluster = kmeans_pca$cluster),
+             main = "K-Means Clustering dengan PCA")
+```
+
+## Evaluasi K-Means
+```{r}
+silhouette_kmeans_pca <- silhouette(kmeans_pca$cluster, dist(pca_data))
+silhouette_score_kmeans_pca <- mean(silhouette_kmeans_pca[, 3])
+wss_kmeans_pca <- kmeans_pca$tot.withinss
+
+cat("Silhouette Score (Dengan PCA):", silhouette_score_kmeans_pca, "\n")
+cat("WSS (Dengan PCA):", wss_kmeans_pca, "\n")
+```
+Setelah data direduksi dimensinya menggunakan PCA menjadi 3 komponen utama, selanjutnya dilakukan klasterisasi menggunakan K-Means.
+
+Hasil visualisasi klaster menunjukkan adanya tiga klaster utama yang terbentuk, yaitu:
+
+- Cluster 1 warna merah
+
+- Cluster 2 warna hijau
+
+- Cluster 3 warna biru
+
+Dengan silhouette score  0.548 dan WSS 11596.8, pengelompokan klaster lebih terlihat terpisah meski antar klaster masih nampak tumpang tindih.
+
+# Visualisasi Pebandingan
+## Barplot WSS
+```{r}
+wss_df <- data.frame(
+  Metode = c("Tanpa PCA", "Dengan PCA"),
+  WSS = c(wss_kmeans, wss_kmeans_pca)
+)
+
+ggplot(wss_df, aes(x = Metode, y = WSS, fill = Metode)) +
+  geom_bar(stat = "identity", width = 0.4) +
+  ggtitle("Perbandingan WSS") +
+  theme_minimal()
+
+```
+
+## Barplot Silhoutte Score
+```{r}
+silhouette_df <- data.frame(
+  Metode = c("Tanpa PCA", "Dengan PCA"),
+  Silhouette = c(silhouette_score_kmeans, silhouette_score_kmeans_pca)
+)
+
+ggplot(silhouette_df, aes(x = Metode, y = Silhouette, fill = Metode)) +
+  geom_bar(stat = "identity", width = 0.4) +
+  ggtitle("Perbandingan Silhouette Score") +
+  theme_minimal()
+
+```
+
+## Silhouette Plot – K-Means tanpa PCA
+```{r}
+fviz_silhouette(silhouette_kmeans) +
+  ggtitle("Silhouette Plot - K-Means (Tanpa PCA)")
+
+```
+Hasil clustering menggunakan K-Means tanpa PCA menghasilkan tiga klaster dengan ukuran yang kurang seimbang. Klaster 1 terdiri dari 476 data dengan rata-rata nilai silhouette tertinggi sebesar 0,22, sedangkan klaster 2 dan klaster 3 masing-masing beranggotakan 2.786 dan 2.738 data, dengan rata-rata silhouette yang lebih rendah, yaitu 0,11 dan 0,12.
+
+Plot silhouette menunjukkan bahwa sebagian besar data memiliki nilai positif, namun relatif rendah, yang mengindikasikan bahwa pemisahan antar klaster masih bersifat moderat. Beberapa data berada di dekat batas antar klaster, sehingga meningkatkan potensi tumpang tindih. Klaster 1 menunjukkan kualitas pemisahan terbaik di antara ketiganya, sedangkan klaster 2 dan 3 menunjukkan pemisahan yang kurang tajam.
+
+Secara keseluruhan, segmentasi menggunakan K-Means tanpa PCA memberikan hasil yang cukup baik, namun masih terdapat ruang untuk perbaikan terutama dalam meningkatkan pemisahan antar klaster.
+
+## Silhouette Plot – K-Means dengan PCA
+```{r}
+fviz_silhouette(silhouette_kmeans_pca) +
+  ggtitle("Silhouette Plot - K-Means (Dengan PCA)")
+
+```
+Hasil clustering K-Means dengan PCA menunjukkan tiga klaster dengan ukuran yang relatif seimbang, yaitu klaster 1 sebanyak 2.738 data, klaster 2 sebanyak 2.786 data, dan klaster 3 berisi 476 data. Rata-rata nilai silhouette pada ketiga klaster tergolong tinggi, yaitu masing-masing sebesar 0,54 untuk klaster 1 dan 2, serta 0,65 untuk klaster 3, yang merupakan nilai tertinggi.
+
+Plot silhouette memperlihatkan bahwa mayoritas data memiliki nilai positif dan cukup tinggi, menandakan pemisahan klaster yang baik dan kohesi internal yang kuat. Klaster 3, meskipun berukuran paling kecil, menunjukkan kualitas pemisahan terbaik. Sementara itu, klaster 1 dan 2 yang berukuran lebih besar juga menunjukkan stabilitas klaster yang baik dengan nilai silhouette yang konsisten.
+
+Secara keseluruhan, penerapan PCA sebelum K-Means berhasil meningkatkan kualitas segmentasi, menghasilkan klaster yang lebih kompak, terpisah dengan jelas, dan berukuran seimbang dibandingkan dengan K-Means tanpa PCA.
+
+
+# Referensi
+
+1. AFIT Data Science Lab. (n.d.). *K-means Cluster Analysis – R Programming Guide*. https://afit-r.github.io/kmeans_clustering  
+2. RDocumentation. (n.d.). *kmeans function (stats package)*. https://www.rdocumentation.org/packages/stats/versions/3.6.2/topics/kmeans
