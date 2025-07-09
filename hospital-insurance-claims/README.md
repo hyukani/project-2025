@@ -13,7 +13,7 @@ This project explores how health insurance claim data can reveal potential fraud
 1. **Data Collection** – Health claim data from CMS.gov  
 2. **Preprocessing** – Data cleaning and transformation  
 3. **EDA (Exploratory Data Analysis)** – Identifying trends and distributions  
-4. **Clustering** – Segmenting patients based on diagnosis and cost  
+4. **Clustering** – Segmenting patients based on diagnosis, age and cost  
 5. **ARM (Apriori Algorithm)** – Finding clinical association patterns  
 6. **Interpretation** – Extracting key insights from results  
 
@@ -55,7 +55,7 @@ These indicate frequent follow-ups, lab diagnostics, and chronic care routines i
 
 This project uncovered three major patient clusters with distinct diagnostic and cost patterns. It revealed strong associations between chronic diseases such as diabetes, Alzheimer’s, and heart conditions. The results provide valuable insights for insurers to detect potential fraud, improve claim efficiency, and make better data-driven decisions.
 
-# ==========================================================================================================================#
+
 
 # 🧠 Menyingkap Pola Tersembunyi dalam Klaim Asuransi Kesehatan
 
@@ -72,7 +72,7 @@ Proyek ini bertujuan mengungkap pola tersembunyi dalam data klaim asuransi keseh
 1. **Pengumpulan Data** – Menggunakan data klaim dari CMS.gov  
 2. **Preprocessing** – Membersihkan dan mentransformasi data  
 3. **EDA (Eksplorasi Data)** – Mengamati distribusi dan tren  
-4. **Clustering** – Mengelompokkan pasien berdasarkan diagnosis dan biaya  
+4. **Clustering** – Mengelompokkan pasien berdasarkan diagnosis, usia dan biaya  
 5. **ARM (Algoritma Apriori)** – Menemukan pola asosiasi klinis  
 6. **Interpretasi** – Mengambil insight dari hasil analisis  
 
@@ -112,7 +112,7 @@ Hal ini mencerminkan rutinitas kontrol, pemeriksaan laboratorium, dan perawatan 
 
 ### 🧠 Kesimpulan
 
-Proyek ini berhasil mengungkap tiga kelompok pasien dengan pola diagnosis dan biaya berbeda. Pola asosiasi menunjukkan keterkaitan kuat antara penyakit kronis seperti diabetes, Alzheimer, dan jantung. Temuan ini dapat dimanfaatkan perusahaan asuransi untuk mendeteksi anomali, meningkatkan efisiensi pengelolaan klaim, dan mendukung keputusan yang lebih objektif.
+Proyek ini mengungkap tiga kelompok pasien dengan pola diagnosis dan biaya berbeda. Pola asosiasi menunjukkan keterkaitan kuat antara penyakit kronis seperti diabetes, Alzheimer, dan jantung. Temuan ini dapat dimanfaatkan perusahaan asuransi untuk mendeteksi anomali, meningkatkan efisiensi pengelolaan klaim, dan mendukung keputusan yang lebih objektif.
 
 ### 👥 Team
 
