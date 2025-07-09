@@ -1,5 +1,3 @@
-## 🇬🇧 English Version
-
 # 🧠 Uncovering Hidden Patterns in Health Insurance Claims
 
 This project explores how health insurance claim data can reveal potential fraud and inefficiencies by uncovering hidden patterns using data science techniques. By applying **Clustering** and **Association Rule Mining (Apriori)**, we identified distinct patient groups and frequent clinical relationships that help support fairer and more efficient decision-making in claims management.
@@ -57,14 +55,7 @@ These indicate frequent follow-ups, lab diagnostics, and chronic care routines i
 
 This project uncovered three major patient clusters with distinct diagnostic and cost patterns. It revealed strong associations between chronic diseases such as diabetes, Alzheimer’s, and heart conditions. The results provide valuable insights for insurers to detect potential fraud, improve claim efficiency, and make better data-driven decisions.
 
-### 👥 Team Members
-
-- **AL Zahra Mayluna** (23031554075)  
-- **Ayu Ghaniyatur R.** (23031554178)  
-- **Maysahaya Artika M.** (23031554214)
-
-
-## 🇮🇩 Versi Bahasa Indonesia
+# ==========================================================================================================================#
 
 # 🧠 Menyingkap Pola Tersembunyi dalam Klaim Asuransi Kesehatan
 
@@ -123,8 +114,8 @@ Hal ini mencerminkan rutinitas kontrol, pemeriksaan laboratorium, dan perawatan 
 
 Proyek ini berhasil mengungkap tiga kelompok pasien dengan pola diagnosis dan biaya berbeda. Pola asosiasi menunjukkan keterkaitan kuat antara penyakit kronis seperti diabetes, Alzheimer, dan jantung. Temuan ini dapat dimanfaatkan perusahaan asuransi untuk mendeteksi anomali, meningkatkan efisiensi pengelolaan klaim, dan mendukung keputusan yang lebih objektif.
 
-### 👥 Anggota Kelompok
+### 👥 Team
 
+- **Maysahaya Artika M.** (23031554214)
 - **AL Zahra Mayluna** (23031554075)  
 - **Ayu Ghaniyatur R.** (23031554178)  
-- **Maysahaya Artika M.** (23031554214)
