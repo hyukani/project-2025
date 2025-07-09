@@ -1,0 +1,6 @@
+# Vehicle Count
+
+Proyek vehicle count ini bertujuan untuk mengembangkan sistem deteksi dan penghitungan kendaraan roda empat atau lebih di jalan raya menggunakan metode computer vision. Sistem ini dirancang untuk memproses video lalu lintas secara otomatis, mendeteksi pergerakan kendaraan tanpa perangkat keras tambahan, seperti sensor dan dapat menghasilkan perhitungan kendaraan yang akurat serta efisien biaya.
+Video yang digunakan adalah rekaman lalu lintas pada suatu ruas jalan dengan sudut pengambilan gambar statis. Fokus dari penelitian adalah mendeteksi kendaraan jenis roda empat atau lebih, seperti mobil dan truk, yang bergerak melalui jalur lurus.
+Metode yang diterapkan dalam sistem ini mencakup preprocessing menggunakan teknik grayscale conversion, Gaussian blur, ROI masking, dan background subtraction. Centroid tracking digunakan untuk melacak kendaraan, dan vehicle counting dilakukan berdasarkan pergerakan titik pusat kendaraan yang melintasi garis hitung. Sistem ini dievaluasi menggunakan metrik Precision, Recall, F1-Score, dan Akurasi, dengan hasil menunjukkan kinerja yang sangat baik.
+Secara keseluruhan, proyek ini bertujuan untuk menyediakan solusi efisien dalam penghitungan kendaraan untuk aplikasi lalu lintas dan manajemen jalan tanpa memerlukan infrastruktur atau perangkat keras tambahan.
